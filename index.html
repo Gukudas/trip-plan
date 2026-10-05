@@ -37,7 +37,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* map */
 .mapwrap{position:relative;height:40vh;min-height:220px;background:#dde2e6;flex:none}
-.mapwrap iframe{width:100%;height:100%;border:0;display:block}
+.mapwrap iframe,.mapwrap #jsmap{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+.mapwrap .hidden{display:none}
 .routebar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--card);border-bottom:1px solid var(--line);flex:none;font-size:13px}
 .routebar .legs{flex:1;min-width:0}
 .routebar .legs b{font-weight:600}
@@ -79,6 +80,8 @@ main{flex:1;overflow-y:auto;padding:16px 16px 24px;-webkit-overflow-scrolling:to
 .item .foot{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin:0 12px;padding:6px 0 8px;border-top:1px dashed var(--line)}
 .item .memo{font-size:12px;line-height:1.55;color:var(--mute);white-space:pre-wrap;min-width:0}
 .item .edit{flex:none;margin-left:auto;border:0;background:none;font-size:12px;color:var(--mute);padding:2px 4px;text-decoration:underline;text-underline-offset:3px}
+.item .plainrow{display:block;width:100%;border:0;background:none;text-align:left;padding:12px 2px 16px;font-size:16px;font-weight:600;color:var(--indigo);letter-spacing:.02em}
+.item.plain .rail::after{background:var(--indigo)}
 .check{display:flex;gap:8px;align-items:center;margin-bottom:12px;font-size:14px}
 .check input{width:18px;height:18px}
 
@@ -127,7 +130,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   <button class="iconbtn" id="openSettings">설정</button>
 </header>
 
-<div class="mapwrap"><iframe id="map" title="구글 지도" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>
+<div class="mapwrap"><div id="jsmap" class="hidden"></div><iframe id="map" title="구글 지도" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>
 <div class="routebar" id="routebar"></div>
 
 <main id="main">
@@ -148,6 +151,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
       <small>비워두면 앞 일정의 도착지에서 출발하는 걸로 잡혀요.</small></label>
     <label class="field"><span>도착지 (구글맵에서 검색되는 이름)</span><input type="text" id="fTo" required placeholder="예: 김포공항 국제선"></label>
     <label class="field"><span>소요시간 (카드 오른쪽에 표시)</span><input type="text" id="fDur" placeholder="예: 약 10분"></label>
+    <label class="check"><input type="checkbox" id="fPlain"><span>박스 없이 한 줄로 표시 (비행 등)</span></label>
     <label class="check"><input type="checkbox" id="fNoMap"><span>지도에 표시 안 함 (시간만 기록)</span></label>
     <label class="field"><span>메모</span><textarea id="fMemo" rows="2" placeholder="입장료, 예약번호 등"></textarea></label>
     <div class="row">
@@ -228,6 +232,17 @@ let state = load() || defaults();
     if(ex) Object.assign(ex, v); else state.days[0].unshift(Object.assign({id:uid()}, v));
     state.patches.push('osaka-v3');
   }
+  if(!state.patches.includes('day1-v4')){
+    const ex = state.days[0].find(x => (x.from||'').startsWith('철산'));
+    if(ex) Object.assign(ex, {time:'06:30', end:'09:15',
+      memo:'7호선 부천종합운동장역 방면(약 13분)\n탑승 시간 06:45, 06:55\n서해선 김포공항역 방면(약 8분)\n탑승 시간 07:09, 07:19\n서해선 김포공항역 → 김포공항 국제선 동선(약 20분소요)\nhttps://m.blog.naver.com/bushytail/223414468195'});
+    state.patches.push('day1-v4');
+  }
+  if(!state.patches.includes('day1-flight')){
+    if(!state.days[0].some(x => x.plain && x.from === 'GMP'))
+      state.days[0].push({id:uid(), time:'09:15', end:'10:55', from:'GMP', to:'KIX', icon:'✈️', plain:true, noMap:true, dur:'', memo:''});
+    state.patches.push('day1-flight');
+  }
   if(!state.patches.includes('apikey-v1')){
     if(!state.apiKey) state.apiKey = BUILTIN_KEY;
     state.patches.push('apikey-v1');
@@ -256,7 +271,7 @@ function mode(){ return MODES.find(m=>m.id===state.mode) || MODES[1]; }
 // 출발지: 직접 입력한 값 > 앞 일정(지도 표시하는 것)의 도착지 > 없음
 function originOf(items, idx){
   if(items[idx].from) return {name:items[idx].from, inferred:false};
-  for(let j=idx-1;j>=0;j--) if(!items[j].noMap && items[j].to) return {name:items[j].to, inferred:true};
+  for(let j=idx-1;j>=0;j--) if(items[j].to) return {name:items[j].to, inferred:true};
   return null;
 }
 
@@ -273,7 +288,75 @@ function routeUrl(a,b){
 const appUrl = (a,b) => `https://www.google.com/maps/dir/?api=1&origin=${enc(a)}&destination=${enc(b)}&travelmode=${mode().id}`;
 const appPinUrl = q => `https://www.google.com/maps/search/?api=1&query=${enc(q)}`;
 let lastSrc = '';
-function setMap(src){ if(src !== lastSrc){ $('map').src = src; lastSrc = src; } }
+function showIframe(){ $('map').classList.remove('hidden'); $('jsmap').classList.add('hidden'); }
+function setMap(src){ showIframe(); if(src !== lastSrc){ $('map').src = src; lastSrc = src; } }
+
+/* 일차별 전체 핀 (Maps JavaScript API + Geocoding API) */
+const GEO_KEY = 'tripPlanner.geo';
+let geoCache = {};
+try{ geoCache = JSON.parse(localStorage.getItem(GEO_KEY)) || {}; }catch(e){}
+const gm = {loading:null, failed:false, geoDenied:false, map:null, markers:[], info:null, geocoder:null, token:0};
+window.gm_authFailure = () => { gm.failed = true; if(!selId) renderMap(); };
+
+function ensureGm(){
+  if(window.google && google.maps && google.maps.Map) return Promise.resolve();
+  if(gm.loading) return gm.loading;
+  gm.loading = new Promise((res, rej) => {
+    window.__gmReady = res;
+    const sc = document.createElement('script');
+    sc.src = `https://maps.googleapis.com/maps/api/js?key=${enc(state.apiKey)}&language=ko&callback=__gmReady`;
+    sc.async = true; sc.onerror = () => { gm.failed = true; rej(); };
+    document.head.appendChild(sc);
+  });
+  return gm.loading;
+}
+function geocode(name){
+  if(geoCache[name]) return Promise.resolve(geoCache[name]);
+  return new Promise(res => {
+    gm.geocoder.geocode({address:name}, (r, status) => {
+      if(status === 'OK' && r[0]){
+        const l = r[0].geometry.location, v = {lat:l.lat(), lng:l.lng()};
+        geoCache[name] = v; try{ localStorage.setItem(GEO_KEY, JSON.stringify(geoCache)); }catch(e){}
+        res(v);
+      }else{ if(status === 'REQUEST_DENIED') gm.geoDenied = true; res(null); }
+    });
+  });
+}
+function dayPlaces(i){
+  const out = [];
+  sorted(i).forEach(it => {
+    if(it.noMap) return;
+    [it.from, it.to].forEach(n => { if(n && !out.includes(n)) out.push(n); });
+  });
+  return out;
+}
+async function showOverview(names){
+  const token = ++gm.token;
+  if(!names.length || !state.apiKey || gm.failed || gm.geoDenied){ setMap(pinUrl(names[0] || DEFAULT_PIN)); return false; }
+  try{ await ensureGm(); }catch(e){ if(token===gm.token) setMap(pinUrl(names[0])); return false; }
+  if(token !== gm.token || gm.failed) return false;
+  $('jsmap').classList.remove('hidden'); $('map').classList.add('hidden');
+  if(!gm.map){
+    gm.map = new google.maps.Map($('jsmap'), {center:{lat:34.69,lng:135.5}, zoom:11, mapTypeControl:false, streetViewControl:false, fullscreenControl:false});
+    gm.info = new google.maps.InfoWindow(); gm.geocoder = new google.maps.Geocoder();
+  }
+  gm.markers.forEach(m => m.setMap(null)); gm.markers = [];
+  const pts = [];
+  for(const n of names){
+    const p = await geocode(n);
+    if(token !== gm.token) return false;
+    if(p) pts.push({n, p});
+  }
+  if(!pts.length){ setMap(pinUrl(names[0])); return false; }
+  const b = new google.maps.LatLngBounds();
+  pts.forEach((x, i) => {
+    const m = new google.maps.Marker({position:x.p, map:gm.map, label:{text:String(i+1), color:'#fff', fontWeight:'700'}, title:x.n});
+    m.addListener('click', () => { gm.info.setContent(`<b>${esc(x.n)}</b>`); gm.info.open(gm.map, m); });
+    gm.markers.push(m); b.extend(x.p);
+  });
+  if(pts.length === 1){ gm.map.setCenter(pts[0].p); gm.map.setZoom(14); } else gm.map.fitBounds(b, 40);
+  return true;
+}
 
 /* 렌더 */
 function renderHeader(){
@@ -303,6 +386,10 @@ function renderList(){
     html += `<div class="empty">아직 일정이 없어요. 아래 버튼으로 첫 일정을 추가하세요.</div>`;
   }else{
     html += `<ol class="timeline">` + items.map((it,idx)=>{
+      if(it.plain) return `<li class="item plain">
+        <div class="t">${timeHtml(it)}</div>
+        <div class="rail" aria-hidden="true"></div>
+        <button class="plainrow" data-edit="${it.id}" aria-label="${esc(titleOf(it))} 수정">${it.icon?esc(it.icon)+' ':''}${esc(titleOf(it))}</button></li>`;
       const o = originOf(items, idx);
       const leg = it.noMap ? '' : (o && o.inferred ? `<div class="leg">${esc(o.name)}에서 출발</div>` : '');
       return `<li class="item ${it.id===selId?'active':''}">
@@ -329,13 +416,17 @@ function renderMap(){
   const bar = $('routebar');
   if(idx === -1){
     selId = null;
-    const first = items.find(it=>!it.noMap && it.to);
-    const q = first ? first.to : DEFAULT_PIN;
-    setMap(pinUrl(q));
-    bar.innerHTML = `<div class="legs"><div><b>${esc(q)}</b></div><div style="color:var(--mute)">일정을 누르면 길찾기가 지도에 표시돼요</div></div>
-      <a class="smallbtn" href="${appPinUrl(q)}" target="_blank" rel="noopener">구글맵에서 열기</a>`;
+    const names = dayPlaces(curDay);
+    bar.innerHTML = names.length
+      ? `<div class="legs"><div><b>${curDay+1}일차 장소 ${names.length}곳</b></div><div style="color:var(--mute)">일정을 누르면 길찾기가 지도에 표시돼요</div></div>`
+      : `<div class="legs"><div><b>${DEFAULT_PIN}</b></div><div style="color:var(--mute)">이날은 아직 지도에 표시할 장소가 없어요</div></div>`;
+    showOverview(names).then(ok => {
+      if(!ok && names.length && !selId && (gm.failed || gm.geoDenied))
+        bar.innerHTML = `<div class="legs"><div><b>${esc(names[0])}</b></div><div style="color:var(--mute)">여러 핀을 보려면 API 키에 Maps JavaScript API와 Geocoding API를 켜주세요</div></div>`;
+    });
     return;
   }
+  gm.token++;
   const it = items[idx];
   if(it.noMap){
     bar.innerHTML = `<div class="legs"><div><b>${esc(titleOf(it))}</b></div><div style="color:var(--mute)">지도 없이 시간만 기록한 일정</div></div>
@@ -394,13 +485,14 @@ function openEdit(id){
   $('fTo').value = it ? (it.to||'') : '';
   $('fDur').value = it ? (it.dur||'') : '';
   $('fNoMap').checked = it ? !!it.noMap : false;
+  $('fPlain').checked = it ? !!it.plain : false;
   $('fMemo').value = it ? (it.memo||'') : '';
   $('fDelete').style.visibility = it ? 'visible' : 'hidden';
   $('editDlg').showModal();
 }
 $('editForm').addEventListener('submit', e=>{
   const v = { time:$('fTime').value, end:$('fEnd').value, from:$('fFrom').value.trim(), to:$('fTo').value.trim(),
-              dur:$('fDur').value.trim(), noMap:$('fNoMap').checked, memo:$('fMemo').value.trim() };
+              dur:$('fDur').value.trim(), noMap:$('fNoMap').checked || $('fPlain').checked, plain:$('fPlain').checked, memo:$('fMemo').value.trim() };
   if(!v.time || !v.to){ e.preventDefault(); return; }
   const list = state.days[curDay];
   if(editId) Object.assign(list.find(x=>x.id===editId), v);
@@ -454,7 +546,13 @@ $('importFile').onchange = e=>{
 
 render();
 if('serviceWorker' in navigator && location.protocol==='https:'){
-  navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  const hadCtrl = !!navigator.serviceWorker.controller;
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(hadCtrl && !refreshing){ refreshing = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('service-worker.js', {updateViaCache:'none'})
+    .then(r => r.update()).catch(()=>{});
 }
 </script>
 </body>

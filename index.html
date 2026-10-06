@@ -37,8 +37,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* map */
 .mapwrap{position:relative;height:40vh;min-height:220px;background:#dde2e6;flex:none}
-.mapwrap iframe,.mapwrap #jsmap{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
-.mapwrap .hidden{display:none}
+.mapwrap iframe{width:100%;height:100%;border:0;display:block}
 .routebar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--card);border-bottom:1px solid var(--line);flex:none;font-size:13px}
 .routebar .legs{flex:1;min-width:0}
 .routebar .legs b{font-weight:600}
@@ -65,7 +64,8 @@ main{flex:1;overflow-y:auto;padding:16px 16px 24px;-webkit-overflow-scrolling:to
 .item{display:grid;grid-template-columns:52px 16px 1fr;column-gap:10px;position:relative}
 .item .t{display:flex;flex-direction:column;align-items:center;font-family:var(--serif);font-size:17px;font-weight:700;padding-top:10px;color:var(--indigo);line-height:1.25}
 .item .t .tilde{font-size:14px;color:var(--mute);line-height:1.1}
-.item .memo a{color:var(--indigo);word-break:break-all}
+.item .memo a,.item .plainmemo a{color:var(--indigo);word-break:break-all}
+.item > div{min-width:0}
 .item .rail{position:relative}
 .item .rail::before{content:"";position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--line)}
 .item .rail::after{content:"";position:absolute;left:2px;top:16px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--indigo)}
@@ -74,14 +74,26 @@ main{flex:1;overflow-y:auto;padding:16px 16px 24px;-webkit-overflow-scrolling:to
 .item.active .card{border-color:var(--matcha);background:var(--matcha-soft)}
 .item .sel{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 12px 8px}
 .item .head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.item .place{font-weight:600;font-size:15.5px}
+.item .place{word-break:keep-all;font-weight:600;font-size:15.5px}
 .item .dur{flex:none;font-size:13px;font-weight:600;color:var(--matcha);white-space:nowrap}
 .item .leg{font-size:12px;color:var(--mute);margin-top:3px}
 .item .foot{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin:0 12px;padding:6px 0 8px;border-top:1px dashed var(--line)}
 .item .memo{font-size:12px;line-height:1.55;color:var(--mute);white-space:pre-wrap;min-width:0}
 .item .edit{flex:none;margin-left:auto;border:0;background:none;font-size:12px;color:var(--mute);padding:2px 4px;text-decoration:underline;text-underline-offset:3px}
-.item .plainrow{display:block;width:100%;border:0;background:none;text-align:left;padding:12px 2px 16px;font-size:16px;font-weight:600;color:var(--indigo);letter-spacing:.02em}
+.item .plainhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.item .plainhead .plainrow{flex:1;min-width:0}
+.item .plainhead .dur{padding-top:12px;padding-right:12px}
+.item .plainmemo{font-size:12px;line-height:1.55;color:var(--mute);white-space:pre-wrap;padding:0 2px 16px;margin-top:-10px}
+.item .plainrow{word-break:keep-all;display:block;width:100%;border:0;background:none;text-align:left;padding:12px 2px 16px;font-size:16px;font-weight:600;color:var(--indigo);letter-spacing:.02em}
 .item.plain .rail::after{background:var(--indigo)}
+.item .ghead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 12px 0}
+.item .subs{list-style:none;margin:10px 0 0;padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
+.item .sub{border:1px solid var(--line);border-radius:8px;background:var(--paper);overflow:hidden}
+.item .sub.active{border-color:var(--matcha);background:var(--matcha-soft)}
+.item .sub .sel{padding:8px 10px 6px}
+.item .sub .place{font-size:14.5px}
+.item .sub .foot{margin:0 10px}
+.item .subtime{font-family:var(--serif);font-weight:700;font-size:13px;color:var(--indigo);margin-bottom:1px}
 .check{display:flex;gap:8px;align-items:center;margin-bottom:12px;font-size:14px}
 .check input{width:18px;height:18px}
 
@@ -130,7 +142,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   <button class="iconbtn" id="openSettings">설정</button>
 </header>
 
-<div class="mapwrap"><div id="jsmap" class="hidden"></div><iframe id="map" title="구글 지도" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>
+<div class="mapwrap"><iframe id="map" title="구글 지도" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe></div>
 <div class="routebar" id="routebar"></div>
 
 <main id="main">
@@ -196,10 +208,51 @@ const MODES = [
 ];
 function uid(){ return Math.random().toString(36).slice(2,9); }
 
-function defaults(){
-  return { title:'오사카 5박 6일', startDate:'2026-10-07', mode:'transit', apiKey:BUILTIN_KEY,
-           days:Array.from({length:DAYS}, () => []), patches:[] };
-}
+/* ===== 여행 일정 데이터 =====
+   이 내용을 고치고 DATA_VERSION을 올려서 GitHub에 올리면
+   앱을 쓰는 모든 사람의 일정이 이 내용으로 바뀝니다. */
+const DATA_VERSION = 10;
+const TRIP = {
+  title: '오사카 5박 6일',
+  startDate: '2026-10-07',
+  days: [
+    [ // 1일차 10/7
+      {id:'d1-1', time:'06:30', end:'09:15', from:'철산역', to:'김포공항 국제선', dur:'약 41분',
+       memo:'7호선 부천종합운동장역 방면(약 13분)\n탑승 시간 06:45, 06:55\n서해선 김포공항역 방면(약 8분)\n탑승 시간 07:09, 07:19\n서해선 김포공항역 → 김포공항 국제선 동선(약 20분소요)\nhttps://m.blog.naver.com/bushytail/223414468195'},
+      {id:'d1-2', time:'09:15', end:'10:55', from:'GMP', to:'KIX', icon:'✈️', dur:'약 100분', plain:true, noMap:true,
+       memo:'예약번호 : XMNITF\n항공편 : 대한항공 KE 2117\n좌석 : 이성민 38C / 최혁진 38D / 구종석 38E'},
+      {id:'d1-3', time:'10:55', end:'12:44', from:'', to:'입국 심사 / 엔화 출금 / 이코카 카드 구매', icon:'💴', dur:'약 109분', plain:true, noMap:true,
+       memo:'여행공금 : 5만엔\n간사이 공항 ATM\nhttps://m.blog.naver.com/resetbeauty/224400325589\n이코카 카드 구매 동선\nhttps://comakase.tistory.com/42'},
+      {id:'d1-4', time:'12:44', end:'14:15', icon:'🚄', dur:'약 91분',
+       from:'간사이 공항', fromQ:'간사이공항역', to:'카이다시멘 키타다', toQ:'貝だし麺 きた田 京都',
+       memo:'하루카(JR 특급)\n*탑승 전 사용시작 누르기\n12:44 탑승 → 교토역 약 14:04 도착(약 80분)\n교토역 → 카이다시멘 키타다 (도보 약 10분)'},
+      {id:'d1-5', time:'14:15', end:'15:00', icon:'🏨', dur:'약 45분',
+       from:'', to:'중식 및 숙소 체크인(교토 다이이치 호텔)',
+       toQ:'Kyōto Dai-ichi Hotel, 45-45 Higashikujo Shimotonodacho, Minami Ward, Kyoto, 601-8047 일본',
+       memo:'도보 약 20분'},
+      {id:'d1-6', time:'15:00', end:'21:20', icon:'🗺️', dur:'약 380분', group:true, to:'관광 및 석식', noMap:true, children:[
+        {id:'d1-6a', time:'15:00', end:'15:45', icon:'🛕', to:'히가시혼간지', toQ:'東本願寺', mode:'walking', dur:'약 45분',
+         memo:'숙소 → 히가시혼간지 도보 약 20분\n관람 약 25분 (무료)'},
+        {id:'d1-6b', time:'15:45', end:'16:50', icon:'🛕', to:'산주산겐도', toQ:'三十三間堂', mode:'walking', dur:'약 65분',
+         memo:'도보 약 25분 (시치조도리 따라 동쪽, 가모가와 건너기)\n*입장 마감 16:30 / 입장료 600엔'},
+        {id:'d1-6c', time:'16:50', end:'17:35', icon:'🍁', to:'도후쿠지', toQ:'東福寺', mode:'walking', dur:'약 45분',
+         memo:'도보 약 25분\n유료 구역(쓰텐쿄)은 16:00 마감이라 무료 경내 산책\n가운교에서 쓰텐쿄 바라보기'},
+        {id:'d1-6d', time:'17:35', end:'19:20', icon:'⛩️', to:'후시미 이나리 신사', toQ:'伏見稲荷大社', mode:'walking', dur:'약 105분',
+         memo:'도보 약 25분\n센본토리이 → 요쓰쓰지 전망대까지 왕복\n해가 지면 등불이 켜짐'},
+        {id:'d1-6e', time:'19:20', end:'21:00', icon:'🍣', to:'스시사카바 사시스 교토 요도바시', toQ:'すし酒場 さしす 京都ヨドバシ', mode:'transit', dur:'약 100분',
+         memo:'JR 나라선 이나리역 → 교토역 약 5분\n교토역 중앙 출구 → 요도바시 도보 약 5~10분\n*웨이팅 있을 수 있음'},
+        {id:'d1-6f', time:'21:00', end:'21:20', icon:'🏨', to:'숙소 복귀(교토 다이이치 호텔)', toQ:'Kyōto Dai-ichi Hotel, 45-45 Higashikujo Shimotonodacho, Minami Ward, Kyoto, 601-8047 일본', mode:'walking', dur:'약 20분',
+         memo:'도보 약 20분'}
+      ]}
+    ],
+    [], // 2일차 10/8
+    [], // 3일차 10/9
+    [], // 4일차 10/10
+    [], // 5일차 10/11
+    []  // 6일차 10/12
+  ]
+};
+
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(KEY));
@@ -209,46 +262,15 @@ function load(){
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
 
-let state = load() || defaults();
-
-(function migrate(){
-  state.patches = state.patches || [];
-  // 예전 '장소' 하나짜리 일정을 출발지/도착지 구조로 변환
-  state.days.forEach(list => list.forEach(it => {
-    if(it.to === undefined){
-      const parts = String(it.place||'').split('→').map(x=>x.trim());
-      if(parts.length === 2){ it.from = parts[0]; it.to = parts[1]; }
-      else { it.from = ''; it.to = it.place || ''; }
-    }
-    delete it.place;
-  }));
-  if(!state.patches.includes('osaka-v3')){
-    state.title = '오사카 5박 6일';
-    state.startDate = '2026-10-07';
-    delete state.base;
-    const v = {time:'07:00', end:'08:00', from:'철산역', to:'김포공항 국제선', dur:'약 41분', noMap:false,
-      memo:'7호선 부천종합운동장역 방면\n탑승 시간 07:03, 07:10, 07:17\n서해선 김포공항역 방면\n탑승 시간 07:19, 07:29, 07:39\n서해선 김포공항역 → 김포공항 국제선 동선\nhttps://m.blog.naver.com/bushytail/223414468195'};
-    const ex = state.days[0].find(x => (x.from||'').startsWith('철산') || (x.to||'').startsWith('철산'));
-    if(ex) Object.assign(ex, v); else state.days[0].unshift(Object.assign({id:uid()}, v));
-    state.patches.push('osaka-v3');
-  }
-  if(!state.patches.includes('day1-v4')){
-    const ex = state.days[0].find(x => (x.from||'').startsWith('철산'));
-    if(ex) Object.assign(ex, {time:'06:30', end:'09:15',
-      memo:'7호선 부천종합운동장역 방면(약 13분)\n탑승 시간 06:45, 06:55\n서해선 김포공항역 방면(약 8분)\n탑승 시간 07:09, 07:19\n서해선 김포공항역 → 김포공항 국제선 동선(약 20분소요)\nhttps://m.blog.naver.com/bushytail/223414468195'});
-    state.patches.push('day1-v4');
-  }
-  if(!state.patches.includes('day1-flight')){
-    if(!state.days[0].some(x => x.plain && x.from === 'GMP'))
-      state.days[0].push({id:uid(), time:'09:15', end:'10:55', from:'GMP', to:'KIX', icon:'✈️', plain:true, noMap:true, dur:'', memo:''});
-    state.patches.push('day1-flight');
-  }
-  if(!state.patches.includes('apikey-v1')){
-    if(!state.apiKey) state.apiKey = BUILTIN_KEY;
-    state.patches.push('apikey-v1');
-  }
+let state = load();
+if(!state || state.dataVersion !== DATA_VERSION){
+  const keep = state || {};
+  state = Object.assign(JSON.parse(JSON.stringify(TRIP)), {
+    mode: keep.mode || 'transit', apiKey: keep.apiKey || BUILTIN_KEY, dataVersion: DATA_VERSION
+  });
   save();
-})();
+}
+
 
 let curDay = 0, selId = null, editId = null;
 const $ = id => document.getElementById(id);
@@ -259,6 +281,8 @@ const timeHtml = it => it.end
   ? `<span>${esc(it.time)}</span><span class="tilde">~</span><span>${esc(it.end)}</span>`
   : `<span>${esc(it.time)}</span>`;
 const titleOf = it => it.from ? `${it.from} → ${it.to}` : it.to;
+const qTo = it => it.toQ || it.to;
+const qFrom = it => it.fromQ || it.from;
 
 function dayDate(i){
   if(!state.startDate) return null;
@@ -269,9 +293,14 @@ function sorted(i){ return [...state.days[i]].sort((a,b)=>a.time.localeCompare(b
 function mode(){ return MODES.find(m=>m.id===state.mode) || MODES[1]; }
 
 // 출발지: 직접 입력한 값 > 앞 일정(지도 표시하는 것)의 도착지 > 없음
+function flat(i){
+  const out = [];
+  sorted(i).forEach(it => it.group ? (it.children||[]).forEach(c => out.push(c)) : out.push(it));
+  return out;
+}
 function originOf(items, idx){
-  if(items[idx].from) return {name:items[idx].from, inferred:false};
-  for(let j=idx-1;j>=0;j--) if(items[j].to) return {name:items[j].to, inferred:true};
+  if(items[idx].from) return {name:qFrom(items[idx]), label:items[idx].from, inferred:false};
+  for(let j=idx-1;j>=0;j--) if(items[j].to) return {name:qTo(items[j]), label:items[j].to, inferred:true};
   return null;
 }
 
@@ -288,75 +317,7 @@ function routeUrl(a,b){
 const appUrl = (a,b) => `https://www.google.com/maps/dir/?api=1&origin=${enc(a)}&destination=${enc(b)}&travelmode=${mode().id}`;
 const appPinUrl = q => `https://www.google.com/maps/search/?api=1&query=${enc(q)}`;
 let lastSrc = '';
-function showIframe(){ $('map').classList.remove('hidden'); $('jsmap').classList.add('hidden'); }
-function setMap(src){ showIframe(); if(src !== lastSrc){ $('map').src = src; lastSrc = src; } }
-
-/* 일차별 전체 핀 (Maps JavaScript API + Geocoding API) */
-const GEO_KEY = 'tripPlanner.geo';
-let geoCache = {};
-try{ geoCache = JSON.parse(localStorage.getItem(GEO_KEY)) || {}; }catch(e){}
-const gm = {loading:null, failed:false, geoDenied:false, map:null, markers:[], info:null, geocoder:null, token:0};
-window.gm_authFailure = () => { gm.failed = true; if(!selId) renderMap(); };
-
-function ensureGm(){
-  if(window.google && google.maps && google.maps.Map) return Promise.resolve();
-  if(gm.loading) return gm.loading;
-  gm.loading = new Promise((res, rej) => {
-    window.__gmReady = res;
-    const sc = document.createElement('script');
-    sc.src = `https://maps.googleapis.com/maps/api/js?key=${enc(state.apiKey)}&language=ko&callback=__gmReady`;
-    sc.async = true; sc.onerror = () => { gm.failed = true; rej(); };
-    document.head.appendChild(sc);
-  });
-  return gm.loading;
-}
-function geocode(name){
-  if(geoCache[name]) return Promise.resolve(geoCache[name]);
-  return new Promise(res => {
-    gm.geocoder.geocode({address:name}, (r, status) => {
-      if(status === 'OK' && r[0]){
-        const l = r[0].geometry.location, v = {lat:l.lat(), lng:l.lng()};
-        geoCache[name] = v; try{ localStorage.setItem(GEO_KEY, JSON.stringify(geoCache)); }catch(e){}
-        res(v);
-      }else{ if(status === 'REQUEST_DENIED') gm.geoDenied = true; res(null); }
-    });
-  });
-}
-function dayPlaces(i){
-  const out = [];
-  sorted(i).forEach(it => {
-    if(it.noMap) return;
-    [it.from, it.to].forEach(n => { if(n && !out.includes(n)) out.push(n); });
-  });
-  return out;
-}
-async function showOverview(names){
-  const token = ++gm.token;
-  if(!names.length || !state.apiKey || gm.failed || gm.geoDenied){ setMap(pinUrl(names[0] || DEFAULT_PIN)); return false; }
-  try{ await ensureGm(); }catch(e){ if(token===gm.token) setMap(pinUrl(names[0])); return false; }
-  if(token !== gm.token || gm.failed) return false;
-  $('jsmap').classList.remove('hidden'); $('map').classList.add('hidden');
-  if(!gm.map){
-    gm.map = new google.maps.Map($('jsmap'), {center:{lat:34.69,lng:135.5}, zoom:11, mapTypeControl:false, streetViewControl:false, fullscreenControl:false});
-    gm.info = new google.maps.InfoWindow(); gm.geocoder = new google.maps.Geocoder();
-  }
-  gm.markers.forEach(m => m.setMap(null)); gm.markers = [];
-  const pts = [];
-  for(const n of names){
-    const p = await geocode(n);
-    if(token !== gm.token) return false;
-    if(p) pts.push({n, p});
-  }
-  if(!pts.length){ setMap(pinUrl(names[0])); return false; }
-  const b = new google.maps.LatLngBounds();
-  pts.forEach((x, i) => {
-    const m = new google.maps.Marker({position:x.p, map:gm.map, label:{text:String(i+1), color:'#fff', fontWeight:'700'}, title:x.n});
-    m.addListener('click', () => { gm.info.setContent(`<b>${esc(x.n)}</b>`); gm.info.open(gm.map, m); });
-    gm.markers.push(m); b.extend(x.p);
-  });
-  if(pts.length === 1){ gm.map.setCenter(pts[0].p); gm.map.setZoom(14); } else gm.map.fitBounds(b, 40);
-  return true;
-}
+function setMap(src){ if(src !== lastSrc){ $('map').src = src; lastSrc = src; } }
 
 /* 렌더 */
 function renderHeader(){
@@ -385,19 +346,39 @@ function renderList(){
   if(!items.length){
     html += `<div class="empty">아직 일정이 없어요. 아래 버튼으로 첫 일정을 추가하세요.</div>`;
   }else{
+    const fl = flat(curDay);
+    const legOf = it => {
+      if(it.noMap) return '';
+      const o = originOf(fl, fl.findIndex(x=>x.id===it.id));
+      return o && o.inferred ? `<div class="leg">${esc(o.label)}에서 출발</div>` : '';
+    };
     html += `<ol class="timeline">` + items.map((it,idx)=>{
+      if(it.group) return `<li class="item group">
+        <div class="t">${timeHtml(it)}</div>
+        <div class="rail" aria-hidden="true"></div>
+        <div class="card">
+          <div class="ghead"><span class="place">${it.icon?esc(it.icon)+' ':''}${esc(it.to)}</span>${it.dur?`<span class="dur">${esc(it.dur)}</span>`:''}</div>
+          <ol class="subs">${(it.children||[]).map(c=>`
+            <li class="sub ${c.id===selId?'active':''}">
+              <button class="sel" data-sel="${c.id}">
+                <div class="subtime">${esc(c.time)}${c.end?' ~ '+esc(c.end):''}</div>
+                <div class="head"><span class="place">${c.icon?esc(c.icon)+' ':''}${esc(titleOf(c))}</span>${c.dur?`<span class="dur">${esc(c.dur)}</span>`:''}</div>
+              </button>
+              ${c.memo?`<div class="foot"><div class="memo">${linkify(c.memo)}</div></div>`:''}
+            </li>`).join('')}
+          </ol>
+        </div></li>`;
       if(it.plain) return `<li class="item plain">
         <div class="t">${timeHtml(it)}</div>
         <div class="rail" aria-hidden="true"></div>
-        <button class="plainrow" data-edit="${it.id}" aria-label="${esc(titleOf(it))} 수정">${it.icon?esc(it.icon)+' ':''}${esc(titleOf(it))}</button></li>`;
-      const o = originOf(items, idx);
-      const leg = it.noMap ? '' : (o && o.inferred ? `<div class="leg">${esc(o.name)}에서 출발</div>` : '');
+        <div><div class="plainhead"><button class="plainrow" data-edit="${it.id}" aria-label="${esc(titleOf(it))} 수정">${it.icon?esc(it.icon)+' ':''}${esc(titleOf(it))}</button>${it.dur?`<span class="dur">${esc(it.dur)}</span>`:''}</div>${it.memo?`<div class="plainmemo">${linkify(it.memo)}</div>`:''}</div></li>`;
+      const leg = legOf(it);
       return `<li class="item ${it.id===selId?'active':''}">
         <div class="t">${timeHtml(it)}</div>
         <div class="rail" aria-hidden="true"></div>
         <div class="card">
           <button class="sel" data-sel="${it.id}">
-            <div class="head"><span class="place">${esc(titleOf(it))}</span>${it.dur?`<span class="dur">${esc(it.dur)}</span>`:''}</div>
+            <div class="head"><span class="place">${it.icon?esc(it.icon)+' ':''}${esc(titleOf(it))}</span>${it.dur?`<span class="dur">${esc(it.dur)}</span>`:''}</div>
             ${leg}
           </button>
           <div class="foot">
@@ -411,22 +392,18 @@ function renderList(){
   $('main').innerHTML = html;
 }
 function renderMap(){
-  const items = sorted(curDay);
+  const items = flat(curDay);
   const idx = items.findIndex(it=>it.id===selId);
   const bar = $('routebar');
   if(idx === -1){
     selId = null;
-    const names = dayPlaces(curDay);
-    bar.innerHTML = names.length
-      ? `<div class="legs"><div><b>${curDay+1}일차 장소 ${names.length}곳</b></div><div style="color:var(--mute)">일정을 누르면 길찾기가 지도에 표시돼요</div></div>`
-      : `<div class="legs"><div><b>${DEFAULT_PIN}</b></div><div style="color:var(--mute)">이날은 아직 지도에 표시할 장소가 없어요</div></div>`;
-    showOverview(names).then(ok => {
-      if(!ok && names.length && !selId && (gm.failed || gm.geoDenied))
-        bar.innerHTML = `<div class="legs"><div><b>${esc(names[0])}</b></div><div style="color:var(--mute)">여러 핀을 보려면 API 키에 Maps JavaScript API와 Geocoding API를 켜주세요</div></div>`;
-    });
+    const first = items.find(it=>!it.noMap && it.to);
+    const q = first ? qTo(first) : DEFAULT_PIN;
+    setMap(pinUrl(q));
+    bar.innerHTML = `<div class="legs"><div style="color:var(--mute)">일정을 누르면 길찾기가 지도에 표시돼요</div></div>
+      <a class="smallbtn" href="${appPinUrl(q)}" target="_blank" rel="noopener">구글맵에서 열기</a>`;
     return;
   }
-  gm.token++;
   const it = items[idx];
   if(it.noMap){
     bar.innerHTML = `<div class="legs"><div><b>${esc(titleOf(it))}</b></div><div style="color:var(--mute)">지도 없이 시간만 기록한 일정</div></div>
@@ -436,19 +413,19 @@ function renderMap(){
   const o = originOf(items, idx);
   const time = `${esc(it.time)}${it.end?' ~ '+esc(it.end):''}`;
   if(!o){
-    setMap(pinUrl(it.to));
+    setMap(pinUrl(qTo(it)));
     bar.innerHTML = `<div class="legs"><div class="to"><b>${esc(it.to)}</b> <span style="color:var(--mute)">${time}</span></div>
       <div style="color:var(--mute)">출발지를 넣으면 길찾기가 표시돼요</div></div>
       <button class="smallbtn" id="clearSel">닫기</button>
-      <a class="smallbtn primary" href="${appPinUrl(it.to)}" target="_blank" rel="noopener">구글맵</a>`;
+      <a class="smallbtn primary" href="${appPinUrl(qTo(it))}" target="_blank" rel="noopener">구글맵</a>`;
     return;
   }
-  setMap(routeUrl(o.name, it.to));
+  setMap(routeUrl(o.name, qTo(it)));
   bar.innerHTML = `<div class="legs">
-      <div class="from"><b>${esc(o.name)}</b></div>
+      <div class="from"><b>${esc(o.label)}</b></div>
       <div class="to"><b>${esc(it.to)}</b> <span style="color:var(--mute)">${time}</span></div></div>
     <button class="smallbtn" id="clearSel">닫기</button>
-    <a class="smallbtn primary" href="${appUrl(o.name, it.to)}" target="_blank" rel="noopener">길찾기</a>`;
+    <a class="smallbtn primary" href="${appUrl(o.name, qTo(it))}" target="_blank" rel="noopener">길찾기</a>`;
 }
 function render(){ renderHeader(); renderTabs(); renderList(); renderMap(); }
 
@@ -461,7 +438,12 @@ $('main').addEventListener('click', e=>{
   const m = e.target.closest('[data-mode]');
   if(m){ state.mode = m.dataset.mode; save(); renderList(); lastSrc=''; renderMap(); return; }
   const s = e.target.closest('[data-sel]');
-  if(s){ selId = (selId===s.dataset.sel) ? null : s.dataset.sel; renderList(); renderMap(); return; }
+  if(s){
+    selId = (selId===s.dataset.sel) ? null : s.dataset.sel;
+    const it = selId && flat(curDay).find(x=>x.id===selId);
+    if(it && it.mode && MODES.some(m=>m.id===it.mode)) state.mode = it.mode;
+    renderList(); renderMap(); return;
+  }
   const ed = e.target.closest('[data-edit]');
   if(ed){ openEdit(ed.dataset.edit); return; }
   if(e.target.closest('#addBtn')) openEdit(null);
